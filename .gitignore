@@ -1,0 +1,78 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+ENV*/
+venv*/
+
+# SQLite Database & Storage
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+nosetests.xml
+coverage.xml
+*.cover
+
+# IDE & Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs & Temporary Files
+*.log
+logs/
+tmp/
+temp/
+
+# Android Build Outputs (if placed in repo)
+*.apk
+*.aab
+.gradle/
+local.properties

@@ -1,0 +1,35 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# SQLite Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
