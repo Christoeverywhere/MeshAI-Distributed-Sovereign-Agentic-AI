@@ -26,8 +26,14 @@ from orchestrator.models import (
     OrchestratorInfoResponse,
     RootResponse,
     SystemStatusResponse,
+    TaskCreate,
+    TaskResponse,
+    TaskResultRequest,
+    TaskStatus
 )
 from orchestrator.node_manager import node_manager
+from orchestrator.task_manager import list_tasks, get_task, get_tasks_for_node, process_task_result, update_task_status
+from orchestrator.task_scheduler import schedule_task
 
 # Configure logging format to match MeshAI specifications
 logging.basicConfig(
@@ -262,6 +268,159 @@ async def remove_node(node_id: str):
         "node_id": node_id,
         "message": f"Node '{node_id}' successfully removed from registry",
     }
+
+
+@app.post(
+    "/api/v1/tasks",
+    response_model=TaskResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new task",
+    tags=["Task Management"],
+)
+async def create_new_task(task_in: TaskCreate):
+    """Create a new task and attempt to schedule it to a suitable worker node."""
+    return schedule_task(task_in)
+
+
+@app.get(
+    "/api/v1/tasks",
+    response_model=List[TaskResponse],
+    summary="List all tasks",
+    tags=["Task Management"],
+)
+async def get_all_tasks():
+    """Retrieve all tasks."""
+    return list_tasks()
+
+
+@app.get(
+    "/api/v1/tasks/{task_id}",
+    response_model=TaskResponse,
+    summary="Get a specific task",
+    tags=["Task Management"],
+)
+async def get_task_by_id(task_id: str):
+    """Retrieve full details for a single task."""
+    task = get_task(task_id)
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task '{task_id}' not found",
+        )
+    return task
+
+
+@app.get(
+    "/api/v1/nodes/{node_id}/tasks",
+    response_model=Optional[TaskResponse],
+    summary="Poll for assigned tasks",
+    tags=["Task Management"],
+)
+async def poll_tasks(node_id: str):
+    """Worker node polls for assigned tasks. Returns the highest priority pending task."""
+    tasks = get_tasks_for_node(node_id, status=TaskStatus.ASSIGNED)
+    if not tasks:
+        return None
+        
+    task = tasks[0]
+    # Mark as running when polled
+    update_task_status(task.task_id, TaskStatus.RUNNING)
+    logger.info(f"[WORKER] Received task {task.task_id} (Node: {node_id})")
+    return get_task(task.task_id)
+
+
+@app.post(
+    "/api/v1/tasks/{task_id}/result",
+    response_model=TaskResponse,
+    summary="Submit task result",
+    tags=["Task Management"],
+)
+async def submit_task_result(task_id: str, result_req: TaskResultRequest):
+    """Worker node submits the result of a task."""
+    task = process_task_result(task_id, result_req)
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task '{task_id}' not found",
+        )
+    return task
+
+
+from orchestrator.models import JobCreate, JobResponse
+from orchestrator.task_manager import create_job, get_job, list_jobs, cancel_job
+
+@app.post(
+    "/api/v1/jobs",
+    response_model=JobResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new job (batch of tasks)",
+    tags=["Job Management"],
+)
+async def create_new_job(job_in: JobCreate):
+    """Create a new job containing multiple tasks and schedule them."""
+    return create_job(job_in)
+
+
+@app.get(
+    "/api/v1/jobs",
+    response_model=List[JobResponse],
+    summary="List all jobs",
+    tags=["Job Management"],
+)
+async def get_all_jobs():
+    """Retrieve all jobs."""
+    return list_jobs()
+
+
+@app.get(
+    "/api/v1/jobs/{job_id}",
+    response_model=JobResponse,
+    summary="Get a specific job",
+    tags=["Job Management"],
+)
+async def get_job_by_id(job_id: str):
+    """Retrieve full details for a single job."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job '{job_id}' not found",
+        )
+    return job
+
+
+@app.get(
+    "/api/v1/jobs/{job_id}/tasks",
+    response_model=List[TaskResponse],
+    summary="Get all tasks for a specific job",
+    tags=["Job Management"],
+)
+async def get_tasks_for_job(job_id: str):
+    """Retrieve all tasks associated with a job."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job '{job_id}' not found",
+        )
+    return job.tasks
+
+
+@app.post(
+    "/api/v1/jobs/{job_id}/cancel",
+    response_model=JobResponse,
+    summary="Cancel a job",
+    tags=["Job Management"],
+)
+async def cancel_job_by_id(job_id: str):
+    """Cancel a job and all its pending/running tasks."""
+    job = cancel_job(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job '{job_id}' not found",
+        )
+    return job
 
 
 if __name__ == "__main__":

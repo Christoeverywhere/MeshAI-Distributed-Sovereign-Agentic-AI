@@ -40,6 +40,13 @@ class NodeManager:
         else:
             capabilities = []
 
+        ai_meta = {}
+        if "ai_metadata" in row.keys() and row["ai_metadata"]:
+            try:
+                ai_meta = json.loads(row["ai_metadata"])
+            except json.JSONDecodeError:
+                pass
+
         return NodeResponse(
             node_id=row["node_id"],
             device_name=row["device_name"],
@@ -54,6 +61,15 @@ class NodeManager:
             registered_at=datetime.fromisoformat(row["registered_at"]),
             last_seen=datetime.fromisoformat(row["last_seen"]),
             status=NodeStatus(row["status"]),
+            available_ram_mb=ai_meta.get("available_ram_mb"),
+            cpu_architecture=ai_meta.get("cpu_architecture"),
+            ai_runtime=ai_meta.get("ai_runtime"),
+            llm_available=ai_meta.get("llm_available"),
+            model_name=ai_meta.get("model_name"),
+            model_size_mb=ai_meta.get("model_size_mb"),
+            max_context_tokens=ai_meta.get("max_context_tokens"),
+            max_output_tokens=ai_meta.get("max_output_tokens"),
+            max_concurrent_inference=ai_meta.get("max_concurrent_inference")
         )
 
     def register_or_update_node(
@@ -69,6 +85,21 @@ class NodeManager:
         now = datetime.now(timezone.utc)
         now_iso = now.isoformat()
         capabilities_json = json.dumps(request.capabilities)
+        
+        ai_meta = {
+            "available_ram_mb": request.available_ram_mb,
+            "cpu_architecture": request.cpu_architecture,
+            "ai_runtime": request.ai_runtime,
+            "llm_available": request.llm_available,
+            "model_name": request.model_name,
+            "model_size_mb": request.model_size_mb,
+            "max_context_tokens": request.max_context_tokens,
+            "max_output_tokens": request.max_output_tokens,
+            "max_concurrent_inference": request.max_concurrent_inference
+        }
+        # Remove None values
+        ai_meta = {k: v for k, v in ai_meta.items() if v is not None}
+        ai_metadata_json = json.dumps(ai_meta) if ai_meta else None
 
         with get_db(self.db_path) as conn:
             cursor = conn.cursor()
@@ -93,7 +124,8 @@ class NodeManager:
                         ip_address = ?,
                         port = ?,
                         last_seen = ?,
-                        status = ?
+                        status = ?,
+                        ai_metadata = ?
                     WHERE node_id = ?
                     """,
                     (
@@ -108,6 +140,7 @@ class NodeManager:
                         request.port or existing["port"],
                         now_iso,
                         NodeStatus.ONLINE.value,
+                        ai_metadata_json,
                         request.node_id,
                     ),
                 )
@@ -123,8 +156,8 @@ class NodeManager:
                     INSERT INTO nodes (
                         node_id, device_name, device_type, operating_system,
                         ram_mb, cpu_cores, battery_percent, capabilities,
-                        ip_address, port, registered_at, last_seen, status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ip_address, port, registered_at, last_seen, status, ai_metadata
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         request.node_id,
@@ -140,6 +173,7 @@ class NodeManager:
                         now_iso,
                         now_iso,
                         NodeStatus.ONLINE.value,
+                        ai_metadata_json,
                     ),
                 )
                 logger.info(f"Node registered: {request.node_id}")
@@ -281,6 +315,18 @@ class NodeManager:
                         "UPDATE nodes SET status = ? WHERE node_id = ?",
                         (NodeStatus.OFFLINE.value, node_id),
                     )
+                    
+                    # Fail tasks assigned to this disconnected node
+                    from orchestrator.models import TaskStatus
+                    now_iso = now.isoformat()
+                    cursor.execute(
+                        """
+                        UPDATE tasks SET status = ?, error = ?, completed_at = ?
+                        WHERE assigned_node = ? AND status IN (?, ?)
+                        """,
+                        (TaskStatus.FAILED.value, "Worker disconnected", now_iso, node_id, TaskStatus.ASSIGNED.value, TaskStatus.RUNNING.value)
+                    )
+                    
                     marked_offline.append(node_id)
                     logger.warning(f"Node offline: {node_id}")
 
