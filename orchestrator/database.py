@@ -65,10 +65,16 @@ def init_db(db_path: str | None = None) -> None:
                 port INTEGER,
                 registered_at TEXT NOT NULL,
                 last_seen TEXT NOT NULL,
-                status TEXT NOT NULL
+                status TEXT NOT NULL,
+                ai_metadata TEXT
             );
             """
         )
+        
+        try:
+            conn.execute("ALTER TABLE nodes ADD COLUMN ai_metadata TEXT;")
+        except sqlite3.OperationalError:
+            pass
 
         # Create indexes for fast status queries and timeout sweeps
         conn.execute(
@@ -76,6 +82,57 @@ def init_db(db_path: str | None = None) -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_nodes_last_seen ON nodes(last_seen);"
+        )
+
+        # Create jobs table
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS jobs (
+                job_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                completed_at TEXT
+            );
+            """
+        )
+
+        # Create tasks table
+        # Adding job_id optionally
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                task_id TEXT PRIMARY KEY,
+                job_id TEXT,
+                task_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                required_capabilities TEXT NOT NULL,
+                priority INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                assigned_node TEXT,
+                result TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                completed_at TEXT,
+                FOREIGN KEY(job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
+            );
+            """
+        )
+        
+        # Add job_id column if tasks table already existed without it (simple migration)
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN job_id TEXT REFERENCES jobs(job_id) ON DELETE CASCADE;")
+        except sqlite3.OperationalError:
+            pass # Column likely exists already
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_assigned_node ON tasks(assigned_node);"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_job_id ON tasks(job_id);"
         )
 
     logger.info("Database initialized successfully")
